@@ -27,7 +27,7 @@ Add ZoomableImageView to your project using Swift Package Manager:
 1. In Xcode, go to **File > Add Package Dependencies...**
 2. Enter the repository URL:
    ```
-   https://github.com/yourusername/ZoomableImageView.git
+   https://github.com/diogomusou/ZoomableImageView.git
    ```
 3. Select the version and click **Add Package**
 
@@ -35,7 +35,7 @@ Or add it directly to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/ZoomableImageView.git", from: "1.0.0")
+    .package(url: "https://github.com/diogomusou/ZoomableImageView.git", from: "1.0.0")
 ]
 ```
 
