@@ -4,41 +4,46 @@ import UIKit
 
 public struct ZoomableImageView: View {
     let image: UIImage
+    let maximumZoomScale: CGFloat
 
-    public init(image: UIImage) {
+    public init(image: UIImage, maximumZoomScale: CGFloat = 5) {
         self.image = image
+        self.maximumZoomScale = maximumZoomScale
     }
 
     public var body: some View {
-        ZoomableImageViewRepresentable(image: image)
+        ZoomableImageViewRepresentable(image: image, maximumZoomScale: maximumZoomScale)
     }
 }
 
 private class LayoutAwareScrollView: UIScrollView {
-    var onLayoutChange: (() -> Void)?
-    private var lastBounds: CGRect = .zero
+    var onLayoutChange: ((_ oldSize: CGSize, _ newSize: CGSize) -> Void)?
+    private var lastSize: CGSize = .zero
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if bounds != lastBounds {
-            lastBounds = bounds
-            onLayoutChange?()
+        if bounds.size != lastSize {
+            let oldSize = lastSize
+            lastSize = bounds.size
+            onLayoutChange?(oldSize, bounds.size)
         }
     }
 }
 
 private struct ZoomableImageViewRepresentable: UIViewRepresentable {
     let image: UIImage
+    let maximumZoomScale: CGFloat
 
     func makeUIView(context: Context) -> LayoutAwareScrollView {
         let scrollView = LayoutAwareScrollView()
         scrollView.minimumZoomScale = 1
-        scrollView.maximumZoomScale = 5
+        scrollView.maximumZoomScale = maximumZoomScale
         scrollView.bouncesZoom = true
         scrollView.alwaysBounceVertical = true
         scrollView.alwaysBounceHorizontal = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.delegate = context.coordinator
 
         let imageView = UIImageView()
@@ -54,13 +59,27 @@ private struct ZoomableImageViewRepresentable: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
 
-        scrollView.onLayoutChange = { [weak scrollView] in
+        scrollView.onLayoutChange = { [weak scrollView] oldSize, newSize in
             guard let scrollView = scrollView,
                   let imageView = scrollView.subviews.first as? UIImageView,
                   let image = imageView.image else { return }
 
-            let scrollSize = scrollView.bounds.size
+            let scrollSize = newSize
             guard scrollSize.width > 0, scrollSize.height > 0 else { return }
+
+            let isInitialLayout = oldSize == .zero
+
+            // Capture the current center point in image coordinates (before changes)
+            let oldZoomScale = scrollView.zoomScale
+            let oldOffset = scrollView.contentOffset
+
+            // The visible center in content (zoomed) coordinates
+            let visibleCenterInContentX = oldOffset.x + oldSize.width / 2
+            let visibleCenterInContentY = oldOffset.y + oldSize.height / 2
+
+            // Convert to original image coordinates
+            let imageCenterX = visibleCenterInContentX / oldZoomScale
+            let imageCenterY = visibleCenterInContentY / oldZoomScale
 
             let minScale = min(
                 scrollSize.width / image.size.width,
@@ -74,10 +93,26 @@ private struct ZoomableImageViewRepresentable: UIViewRepresentable {
                 scrollView.zoomScale = minScale
             }
 
-            let imageSize = imageView.frame.size
-            let horizontalInset = max(0, (scrollSize.width - imageSize.width) / 2)
-            let verticalInset = max(0, (scrollSize.height - imageSize.height) / 2)
+            // Calculate new image size (don't rely on frame which may not be updated yet)
+            let newZoomScale = scrollView.zoomScale
+            let newImageSize = CGSize(
+                width: image.size.width * newZoomScale,
+                height: image.size.height * newZoomScale
+            )
+
+            // Calculate new insets
+            let horizontalInset = max(0, (scrollSize.width - newImageSize.width) / 2)
+            let verticalInset = max(0, (scrollSize.height - newImageSize.height) / 2)
             scrollView.contentInset = UIEdgeInsets(top: verticalInset, left: horizontalInset, bottom: 0, right: 0)
+
+            // Restore center point (only if was zoomed in and not initial layout)
+            if !wasAtMin && !isInitialLayout {
+                // Convert image point back to content coordinates and calculate offset
+                var newOffsetX = imageCenterX * newZoomScale - scrollSize.width / 2
+                var newOffsetY = imageCenterY * newZoomScale - scrollSize.height / 2
+
+                scrollView.contentOffset = CGPoint(x: newOffsetX, y: newOffsetY)
+            }
         }
 
         return scrollView
